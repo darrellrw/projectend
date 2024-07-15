@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>ProjectEnd</title>
+
+        <style>
+            .hidden {
+                display: none;
+            }
+        </style>
+
+        <script>
+            function toggleSource() {
+                var checkbox = document.getElementById("thresholdToggle");
+                var video = document.getElementById("videoBox");
+                var slider = document.getElementById("thresholdSlider");
+                if (checkbox.checked) {
+                    video.src = "{{ url_for('video', threshold = 'True') }}";
+                    slider.classList.remove("hidden");
+                } else {
+                    video.src = "{{ url_for('video', threshold = 'False') }}";
+                    slider.classList.add("hidden");
+                }
+            }
+
+            function updateThreshold() {
+                var lowerR = parseInt(document.getElementById("lowerR").value);
+                var upperR = parseInt(document.getElementById("upperR").value);
+                var lowerG = parseInt(document.getElementById("lowerG").value);
+                var upperG = parseInt(document.getElementById("upperG").value);
+                var lowerB = parseInt(document.getElementById("lowerB").value);
+                var upperB = parseInt(document.getElementById("upperB").value);
+
+                if (lowerR >= upperR) {
+                    lowerR = upperR;
+                    document.getElementById("lowerR").value = lowerR;
+                }
+                if (lowerG >= upperG) {
+                    lowerG = upperG;
+                    document.getElementById("lowerG").value = lowerG;
+                }
+                if (lowerB >= upperB) {
+                    lowerB = upperB;
+                    document.getElementById("lowerB").value = lowerB;
+                }
+
+                var img = document.getElementById("videoBox");
+                img.src = "{{ url_for('video', threshold = 'True') }}&lower_r=" + lowerR + "&upper_r=" + upperR + "&lower_g=" + lowerG + "&upper_g=" + upperG + "&lower_b=" + lowerB + "&upper_b=" + upperB;
+                
+                document.getElementById('lowerRValue').innerText = lowerR;
+                document.getElementById('upperRValue').innerText = upperR;
+                document.getElementById('lowerGValue').innerText = lowerG;
+                document.getElementById('upperGValue').innerText = upperG;
+                document.getElementById('lowerBValue').innerText = lowerB;
+                document.getElementById('upperBValue').innerText = upperB;
+            }
+        </script>
+    </head>
+    <body>
+        <h1>Project End</h1>
+        <div>
+            <label>
+                <input type="checkbox" id="thresholdToggle" onchange="toggleSource()">
+                Threshold
+            </label>
+        </div>
+
+        <div id="thresholdSlider" class="hidden">
+            <div>
+                <div>
+                    <label for="lowerR">Lower R: <span id="lowerRValue">255</span></label>
+                    <input type="range" id="lowerR" min="0" max="255" value="255" oninput="updateThreshold()">
+                </div>
+                <div>
+                    <label for="lowerG">Lower G: <span id="lowerGValue">150</span></label>
+                    <input type="range" id="lowerG" min="0" max="255" value="150" oninput="updateThreshold()">
+                </div>
+                <div>
+                    <label for="lowerB">Lower B: <span id="lowerBValue">210</span></label>
+                    <input type="range" id="lowerB" min="0" max="255" value="210" oninput="updateThreshold()">
+                </div>
+            </div>
+
+            <div>
+                <div>
+                    <label for="upperR">Upper R: <span id="upperRValue">255</span></label>
+                    <input type="range" id="upperR" min="0" max="255" value="255" oninput="updateThreshold()">
+                </div>
+                <div>
+                    <label for="upperG">Upper G: <span id="upperGValue">255</span></label>
+                    <input type="range" id="upperG" min="0" max="255" value="255" oninput="updateThreshold()">
+                </div>
+                <div>
+                    <label for="upperB">Upper B: <span id="upperBValue">255</span></label>
+                    <input type="range" id="upperB" min="0" max="255" value="255" oninput="updateThreshold()">
+                </div>
+            </div>
+        </div>
+
+        <div>
+            <img id="videoBox" src="{{ url_for('video') }}" alt="Video" />
+        </div>
+    </body>
+</html>
