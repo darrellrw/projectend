@@ -5,23 +5,36 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>ProjectEnd</title>
 
-        <style>
-            .hidden {
-                display: none;
-            }
-        </style>
-
         <script>
             function toggleSource() {
-                var checkbox = document.getElementById("thresholdToggle");
+                var lowerR = document.getElementById('lowerR');
+                var lowerG = document.getElementById('lowerG');
+                var lowerB = document.getElementById('lowerB');
+                var upperR = document.getElementById('upperR');
+                var upperG = document.getElementById('upperG');
+                var upperB = document.getElementById('upperB');
+
+                var thresholdCB = document.getElementById("thresholdToggle");
                 var video = document.getElementById("videoBox");
-                var slider = document.getElementById("thresholdSlider");
-                if (checkbox.checked) {
+
+                if (thresholdCB.checked) {
+                    lowerR.disabled = true;
+                    lowerG.disabled = true;
+                    lowerB.disabled = true;
+                    upperR.disabled = true;
+                    upperG.disabled = true;
+                    upperB.disabled = true;
+
                     video.src = "{{ url_for('video', threshold = 'True') }}";
-                    slider.classList.remove("hidden");
                 } else {
                     video.src = "{{ url_for('video', threshold = 'False') }}";
-                    slider.classList.add("hidden");
+
+                    lowerR.disabled = false;
+                    lowerG.disabled = false;
+                    lowerB.disabled = false;
+                    upperR.disabled = false;
+                    upperG.disabled = false;
+                    upperB.disabled = false;
                 }
             }
 
@@ -46,15 +59,71 @@
                     document.getElementById("lowerB").value = lowerB;
                 }
 
-                var img = document.getElementById("videoBox");
-                img.src = "{{ url_for('video', threshold = 'True') }}&lower_r=" + lowerR + "&upper_r=" + upperR + "&lower_g=" + lowerG + "&upper_g=" + upperG + "&lower_b=" + lowerB + "&upper_b=" + upperB;
+                var theUrl = "{{ url_for('change_threshold') }}?&lower_r=" + lowerR + "&upper_r=" + upperR + "&lower_g=" + lowerG + "&upper_g=" + upperG + "&lower_b=" + lowerB + "&upper_b=" + upperB;
+                var xmlHttp = new XMLHttpRequest();
+                xmlHttp.open("GET", theUrl, true);
+                xmlHttp.send(null);
                 
                 document.getElementById('lowerRValue').innerText = lowerR;
-                document.getElementById('upperRValue').innerText = upperR;
                 document.getElementById('lowerGValue').innerText = lowerG;
-                document.getElementById('upperGValue').innerText = upperG;
                 document.getElementById('lowerBValue').innerText = lowerB;
+                document.getElementById('upperRValue').innerText = upperR;
+                document.getElementById('upperGValue').innerText = upperG;
                 document.getElementById('upperBValue').innerText = upperB;
+            }
+
+            function updateScore() {
+                var bScore = parseInt(document.getElementById("bScore").value);
+                var hScore = parseInt(document.getElementById("hScore").value);
+
+                var theUrl = "{{ url_for('change_score') }}?&b_score=" + bScore + "&h_score=" + hScore;
+                var xmlHttp = new XMLHttpRequest();
+                xmlHttp.open("GET", theUrl, true);
+                xmlHttp.send(null);
+
+                document.getElementById('bScoreValue').innerText = bScore;
+                document.getElementById('hScoreValue').innerText = hScore;
+            }
+
+            function resetThreshold() {
+                document.getElementById("lowerR").value = "{{ lower_bound_color[0] }}";
+                document.getElementById("lowerG").value = "{{ lower_bound_color[1] }}";
+                document.getElementById("lowerB").value = "{{ lower_bound_color[2] }}";
+                document.getElementById("upperR").value = "{{ upper_bound_color[0] }}";
+                document.getElementById("upperG").value = "{{ upper_bound_color[1] }}";
+                document.getElementById("upperB").value = "{{ upper_bound_color[2] }}";
+
+                document.getElementById('lowerRValue').innerText = "{{ lower_bound_color[0] }}";
+                document.getElementById('lowerGValue').innerText = "{{ lower_bound_color[1] }}";
+                document.getElementById('lowerBValue').innerText = "{{ lower_bound_color[2] }}";
+                document.getElementById('upperRValue').innerText = "{{ upper_bound_color[0] }}";
+                document.getElementById('upperGValue').innerText = "{{ upper_bound_color[1] }}";
+                document.getElementById('upperBValue').innerText = "{{ upper_bound_color[2] }}";
+
+                var theUrl = "{{ url_for('change_threshold') }}?&lower_r={{ lower_bound_color[0] }}&upper_r={{ upper_bound_color[0] }}&lower_g={{ lower_bound_color[1] }}&upper_g={{ upper_bound_color[1] }}&lower_b={{ lower_bound_color[2] }}&upper_b={{ upper_bound_color[2] }}";
+                var xmlHttp = new XMLHttpRequest();
+                xmlHttp.open("GET", theUrl, true);
+                xmlHttp.send(null);
+            }
+
+            function resetScore() {
+                document.getElementById("bScore").value = "{{ b_score }}";
+                document.getElementById("hScore").value = "{{ h_score }}";
+
+                document.getElementById('bScoreValue').innerText = "{{ b_score }}";
+                document.getElementById('hScoreValue').innerText = "{{ h_score }}";
+
+                var theUrl = "{{ url_for('change_score') }}?&b_score={{ b_score }}&h_score={{ h_score }}";
+                var xmlHttp = new XMLHttpRequest();
+                xmlHttp.open("GET", theUrl, true);
+                xmlHttp.send(null);
+            }
+
+            function takePicture() {
+                var theUrl = "{{ url_for('picture') }}";
+                var xmlHttp = new XMLHttpRequest();
+                xmlHttp.open("GET", theUrl, true);
+                xmlHttp.send(null);
             }
         </script>
     </head>
@@ -67,40 +136,55 @@
             </label>
         </div>
 
-        <div id="thresholdSlider" class="hidden">
+        <div>
             <div>
                 <div>
-                    <label for="lowerR">Lower R: <span id="lowerRValue">255</span></label>
-                    <input type="range" id="lowerR" min="0" max="255" value="255" oninput="updateThreshold()">
+                    <label for="lowerR">Lower R: <span id="lowerRValue">{{ lower_bound_color[0] }}</span></label>
+                    <input type="range" id="lowerR" min="0" max="255" value="{{ lower_bound_color[0] }}" oninput="updateThreshold()">
                 </div>
                 <div>
-                    <label for="lowerG">Lower G: <span id="lowerGValue">150</span></label>
-                    <input type="range" id="lowerG" min="0" max="255" value="150" oninput="updateThreshold()">
+                    <label for="lowerG">Lower G: <span id="lowerGValue">{{ lower_bound_color[1] }}</span></label>
+                    <input type="range" id="lowerG" min="0" max="255" value="{{ lower_bound_color[1] }}" oninput="updateThreshold()">
                 </div>
                 <div>
-                    <label for="lowerB">Lower B: <span id="lowerBValue">210</span></label>
-                    <input type="range" id="lowerB" min="0" max="255" value="210" oninput="updateThreshold()">
+                    <label for="lowerB">Lower B: <span id="lowerBValue">{{ lower_bound_color[2] }}</span></label>
+                    <input type="range" id="lowerB" min="0" max="255" value="{{ lower_bound_color[2] }}" oninput="updateThreshold()">
                 </div>
             </div>
 
             <div>
                 <div>
-                    <label for="upperR">Upper R: <span id="upperRValue">255</span></label>
-                    <input type="range" id="upperR" min="0" max="255" value="255" oninput="updateThreshold()">
+                    <label for="upperR">Upper R: <span id="upperRValue">{{ upper_bound_color[0] }}</span></label>
+                    <input type="range" id="upperR" min="0" max="255" value="{{ upper_bound_color[0] }}" oninput="updateThreshold()">
                 </div>
                 <div>
-                    <label for="upperG">Upper G: <span id="upperGValue">255</span></label>
-                    <input type="range" id="upperG" min="0" max="255" value="255" oninput="updateThreshold()">
+                    <label for="upperG">Upper G: <span id="upperGValue">{{ upper_bound_color[1] }}</span></label>
+                    <input type="range" id="upperG" min="0" max="255" value="{{ upper_bound_color[1] }}" oninput="updateThreshold()">
                 </div>
                 <div>
-                    <label for="upperB">Upper B: <span id="upperBValue">255</span></label>
-                    <input type="range" id="upperB" min="0" max="255" value="255" oninput="updateThreshold()">
+                    <label for="upperB">Upper B: <span id="upperBValue">{{ upper_bound_color[2] }}</span></label>
+                    <input type="range" id="upperB" min="0" max="255" value="{{ upper_bound_color[2] }}" oninput="updateThreshold()">
                 </div>
             </div>
+
+            <input type="button" value="Reset Threshold" onclick="resetThreshold()">
         </div>
 
         <div>
             <img id="videoBox" src="{{ url_for('video') }}" alt="Video" />
+        </div>
+
+        <div>
+            <div>
+                <label for="bScore">B Score: <span id="bScoreValue">{{ b_score }}</span></label>
+                <input type="range" id="bScore" min="-100" max="100" value="{{ b_score }}" oninput="updateScore()">
+            </div>
+            <div>
+                <label for="hScore">H Score: <span id="hScoreValue">{{ h_score }}</span></label>
+                <input type="range" id="hScore" min="-100" max="100" value="{{ h_score }}" oninput="updateScore()">
+            </div>
+            <input type="button" value="Reset Score" onclick="resetScore()">
+            <input type="button" value="Start" onclick="takePicture()">
         </div>
     </body>
 </html>
