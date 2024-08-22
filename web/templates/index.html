@@ -3,188 +3,383 @@
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>ProjectEnd</title>
-
+        <title>Project End</title>
         <script>
+            function updateVideoSource(params = {}) {
+                const urlParams = new URLSearchParams(params).toString();
+                const video = document.getElementById("videoBox");
+                video.src = `{{ url_for('video') }}?${urlParams}`;
+            }
+
+            function toggleInputs(disable) {
+                const inputs = ['lowerH', 'lowerS', 'lowerV', 'upperH', 'upperS', 'upperV'];
+                inputs.forEach(id => document.getElementById(id).disabled = disable);
+            }
+
+            function refToggleSource() {
+                const thresholdCB = document.getElementById("thresholdToggle");
+                // toggleInputs(thresholdCB.checked);
+                updateVideoSource({ threshold: thresholdCB.checked });
+            }
+
             function toggleSource() {
-                var lowerR = document.getElementById('lowerR');
-                var lowerG = document.getElementById('lowerG');
-                var lowerB = document.getElementById('lowerB');
-                var upperR = document.getElementById('upperR');
-                var upperG = document.getElementById('upperG');
-                var upperB = document.getElementById('upperB');
-
-                var thresholdCB = document.getElementById("thresholdToggle");
-                var video = document.getElementById("videoBox");
-
-                if (thresholdCB.checked) {
-                    lowerR.disabled = true;
-                    lowerG.disabled = true;
-                    lowerB.disabled = true;
-                    upperR.disabled = true;
-                    upperG.disabled = true;
-                    upperB.disabled = true;
-
-                    video.src = "{{ url_for('video', threshold = 'True') }}";
-                } else {
-                    video.src = "{{ url_for('video', threshold = 'False') }}";
-
-                    lowerR.disabled = false;
-                    lowerG.disabled = false;
-                    lowerB.disabled = false;
-                    upperR.disabled = false;
-                    upperG.disabled = false;
-                    upperB.disabled = false;
-                }
+                const flipCB = document.getElementById("flipToggle");
+                const referenceCB = document.getElementById("referenceToggle");
+                const thresholdCB = document.getElementById("thresholdToggle");
+                updateVideoSource({ threshold: thresholdCB.checked, flip: flipCB.checked, reference: referenceCB.checked });
             }
 
             function updateThreshold() {
-                var lowerR = parseInt(document.getElementById("lowerR").value);
-                var upperR = parseInt(document.getElementById("upperR").value);
-                var lowerG = parseInt(document.getElementById("lowerG").value);
-                var upperG = parseInt(document.getElementById("upperG").value);
-                var lowerB = parseInt(document.getElementById("lowerB").value);
-                var upperB = parseInt(document.getElementById("upperB").value);
+                const values = ['lowerH', 'upperH', 'lowerS', 'upperS', 'lowerV', 'upperV'].map(id => parseInt(document.getElementById(id).value));
+                [0, 2, 4].forEach(i => {
+                    if (values[i] >= values[i + 1]) {
+                        values[i] = values[i + 1];
+                        document.getElementById([['lowerH', 'lowerS', 'lowerV'][i / 2]]).value = values[i];
+                    }
+                });
+                updateValuesDisplay(values);
+                updateThresholdOnServer(values);
+            }
 
-                if (lowerR >= upperR) {
-                    lowerR = upperR;
-                    document.getElementById("lowerR").value = lowerR;
-                }
-                if (lowerG >= upperG) {
-                    lowerG = upperG;
-                    document.getElementById("lowerG").value = lowerG;
-                }
-                if (lowerB >= upperB) {
-                    lowerB = upperB;
-                    document.getElementById("lowerB").value = lowerB;
-                }
+            function updateValuesDisplay(values) {
+                const ids = ['lowerH', 'upperH', 'lowerS', 'upperS', 'lowerV', 'upperV'];
+                values.forEach((value, i) => document.getElementById(ids[i] + 'Value').innerText = value);
+            }
 
-                var theUrl = "{{ url_for('change_threshold') }}?&lower_r=" + lowerR + "&upper_r=" + upperR + "&lower_g=" + lowerG + "&upper_g=" + upperG + "&lower_b=" + lowerB + "&upper_b=" + upperB;
-                var xmlHttp = new XMLHttpRequest();
-                xmlHttp.open("GET", theUrl, true);
-                xmlHttp.send(null);
-                
-                document.getElementById('lowerRValue').innerText = lowerR;
-                document.getElementById('lowerGValue').innerText = lowerG;
-                document.getElementById('lowerBValue').innerText = lowerB;
-                document.getElementById('upperRValue').innerText = upperR;
-                document.getElementById('upperGValue').innerText = upperG;
-                document.getElementById('upperBValue').innerText = upperB;
+            function updateThresholdOnServer(values) {
+                const params = {
+                    lower_h: values[0],
+                    upper_h: values[1],
+                    lower_s: values[2],
+                    upper_s: values[3],
+                    lower_v: values[4],
+                    upper_v: values[5]
+                };
+                sendRequest("{{ url_for('change_threshold') }}", params, (response, status) => {
+                    if (status === 200) {
+                        console.log(response);
+                    }
+                });
             }
 
             function updateScore() {
-                var bScore = parseInt(document.getElementById("bScore").value);
-                var hScore = parseInt(document.getElementById("hScore").value);
+                const bScore = parseFloat(document.getElementById("bScore").value);
+                const hScore = parseFloat(document.getElementById("hScore").value);
 
-                var theUrl = "{{ url_for('change_score') }}?&b_score=" + bScore + "&h_score=" + hScore;
-                var xmlHttp = new XMLHttpRequest();
-                xmlHttp.open("GET", theUrl, true);
-                xmlHttp.send(null);
+                if (bScore < -100) {
+                    document.getElementById("bScore").value = -100;
+                    document.getElementById("bScoreValue").innerText = -100;
+                } else if (bScore > 100) {
+                    document.getElementById("bScore").value = 100;
+                    document.getElementById("bScoreValue").innerText = 100;
+                } else {
+                    document.getElementById("bScoreValue").innerText = bScore;
+                }
+
+                if (hScore < -100) {
+                    document.getElementById("hScore").value = -100;
+                    document.getElementById("hScoreValue").innerText = -100;
+                } else if (hScore > 100) {
+                    document.getElementById("hScore").value = 100;
+                    document.getElementById("hScoreValue").innerText = 100;
+                } else {
+                    document.getElementById("hScoreValue").innerText = hScore;
+                }
 
                 document.getElementById('bScoreValue').innerText = bScore;
                 document.getElementById('hScoreValue').innerText = hScore;
+                sendRequest("{{ url_for('change_score') }}", { b_score: bScore, h_score: hScore }, (response, status) => {
+                    if (status === 200) {
+                        console.log(response);
+                    }
+                });
+            }
+
+            function resetInputs(inputValues, prefix) {
+                inputValues.forEach((value, i) => {
+                    const id = ['H', 'S', 'V'][i];
+                    document.getElementById(`${prefix}${id}`).value = value;
+                    document.getElementById(`${prefix}${id}Value`).innerText = value;
+                });
             }
 
             function resetThreshold() {
-                document.getElementById("lowerR").value = "{{ lower_bound_color[0] }}";
-                document.getElementById("lowerG").value = "{{ lower_bound_color[1] }}";
-                document.getElementById("lowerB").value = "{{ lower_bound_color[2] }}";
-                document.getElementById("upperR").value = "{{ upper_bound_color[0] }}";
-                document.getElementById("upperG").value = "{{ upper_bound_color[1] }}";
-                document.getElementById("upperB").value = "{{ upper_bound_color[2] }}";
-
-                document.getElementById('lowerRValue').innerText = "{{ lower_bound_color[0] }}";
-                document.getElementById('lowerGValue').innerText = "{{ lower_bound_color[1] }}";
-                document.getElementById('lowerBValue').innerText = "{{ lower_bound_color[2] }}";
-                document.getElementById('upperRValue').innerText = "{{ upper_bound_color[0] }}";
-                document.getElementById('upperGValue').innerText = "{{ upper_bound_color[1] }}";
-                document.getElementById('upperBValue').innerText = "{{ upper_bound_color[2] }}";
-
-                var theUrl = "{{ url_for('change_threshold') }}?&lower_r={{ lower_bound_color[0] }}&upper_r={{ upper_bound_color[0] }}&lower_g={{ lower_bound_color[1] }}&upper_g={{ upper_bound_color[1] }}&lower_b={{ lower_bound_color[2] }}&upper_b={{ upper_bound_color[2] }}";
-                var xmlHttp = new XMLHttpRequest();
-                xmlHttp.open("GET", theUrl, true);
-                xmlHttp.send(null);
+                const lowerBoundColor = ["{{ lower_bound_color[0] }}", "{{ lower_bound_color[1] }}", "{{ lower_bound_color[2] }}"];
+                const upperBoundColor = ["{{ upper_bound_color[0] }}", "{{ upper_bound_color[1] }}", "{{ upper_bound_color[2] }}"];
+                resetInputs(lowerBoundColor, 'lower');
+                resetInputs(upperBoundColor, 'upper');
+                updateThresholdOnServer([lowerBoundColor[0], upperBoundColor[0], lowerBoundColor[1], upperBoundColor[1], lowerBoundColor[2], upperBoundColor[2]]);
             }
 
             function resetScore() {
-                document.getElementById("bScore").value = "{{ b_score }}";
-                document.getElementById("hScore").value = "{{ h_score }}";
-
-                document.getElementById('bScoreValue').innerText = "{{ b_score }}";
-                document.getElementById('hScoreValue').innerText = "{{ h_score }}";
-
-                var theUrl = "{{ url_for('change_score') }}?&b_score={{ b_score }}&h_score={{ h_score }}";
-                var xmlHttp = new XMLHttpRequest();
-                xmlHttp.open("GET", theUrl, true);
-                xmlHttp.send(null);
+                const bScore = "{{ b_score }}";
+                const hScore = "{{ h_score }}";
+                document.getElementById("bScore").value = bScore;
+                document.getElementById("hScore").value = hScore;
+                document.getElementById('bScoreValue').innerText = bScore;
+                document.getElementById('hScoreValue').innerText = hScore;
+                sendRequest("{{ url_for('change_score') }}", { b_score: bScore, h_score: hScore }, (response, status) => {
+                    if (status === 200) {
+                        console.log(response);
+                    }
+                });
             }
 
-            function takePicture() {
-                var theUrl = "{{ url_for('picture') }}";
-                var xmlHttp = new XMLHttpRequest();
-                xmlHttp.open("GET", theUrl, true);
+            function startScanning() {
+                document.getElementById("statusRendering").innerText = "Scanning...";
+                sendRequest("{{ url_for('scanning') }}", {}, (response, status) => {
+                    if (status === 200) {
+                        document.getElementById("statusRendering").innerText = `Scanning Complete | Folder Path: ${response}`;
+                        console.log(response);
+                    }
+                });
+            }
+
+            function startGenerate() {
+                document.getElementById("statusRendering").innerText = "Generating...";
+
+                const folderPath = document.getElementById("txtPath").value;
+
+                if (folderPath === "") {
+                    document.getElementById("statusRendering").innerText = "Please enter a folder path";
+                } else {
+                    sendRequest("{{ url_for('generate') }}", { folder_path: folderPath }, (response, status) => {
+                        if (status === 200) {
+                            document.getElementById("statusRendering").innerText = `Generating Complete | ${response}`;
+                            folderPath = "";
+                            console.log(response);
+                        } else {
+                            document.getElementById("statusRendering").innerText = `Error ${response}`;
+                        }
+                    });
+                }
+
+            }
+
+            function rotatingTest() {
+                document.getElementById("statusRendering").innerText = "Rotating Test...";
+
+                sendRequest("{{ url_for('rotating_test') }}", {}, (response, status) => {
+                    if (status === 200) {
+                        document.getElementById("statusRendering").innerText = "---";
+                        console.log(response);
+                    }
+                });
+            }
+
+            function sendRequest(url, params = {}, callback) {
+                const xmlHttp = new XMLHttpRequest();
+                const urlParams = new URLSearchParams(params).toString();
+                xmlHttp.open("GET", `${url}?${urlParams}`, true);
+
+                xmlHttp.onreadystatechange = function() {
+                    if (xmlHttp.readyState === 4) {
+                        callback(xmlHttp.responseText, xmlHttp.status);
+                    }
+                };
+
                 xmlHttp.send(null);
+
             }
         </script>
+        <style>
+            body {
+                font-family: 'Arial', sans-serif;
+                background-color: #f4f4f4;
+                color: #333;
+                margin: 0;
+                padding: 20px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                min-height: 100vh;
+                box-sizing: border-box;
+            }
+
+            h1 {
+                color: #444;
+                margin-bottom: 30px;
+                text-align: center;
+            }
+
+            h2 {
+                font-size: 24px;
+                color: #555;
+                margin-bottom: 10px;
+                border-bottom: 2px solid #ddd;
+                padding-bottom: 5px;
+            }
+
+            h3 {
+                font-size: 20px;
+                color: #666;
+                margin: 20px 0 10px;
+                border-bottom: 1px solid #ddd;
+                padding-bottom: 5px;
+            }
+
+            div {
+                width: 90%;
+                max-width: 800px;
+                margin-bottom: 20px;
+                background-color: #fff;
+                padding: 15px;
+                border-radius: 8px;
+                box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            }
+
+            label {
+                font-weight: bold;
+                display: block;
+                margin-bottom: 5px;
+            }
+
+            input[type="checkbox"] {
+                margin-right: 10px;
+            }
+
+            input[type="range"] {
+                width: 100%;
+                margin-top: 5px;
+            }
+
+            input[type="button"] {
+                background-color: #007BFF;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                margin-top: 20px;
+                cursor: pointer;
+                border-radius: 5px;
+                font-size: 14px;
+            }
+
+            input[type="button"]:hover {
+                background-color: #0056b3;
+            }
+
+            input[type="number"] {
+                width: 100%;
+                padding: 8px;
+                margin-top: 5px;
+                margin-bottom: 10px;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                font-size: 14px;
+            }
+
+            input[type="text"] {
+                width: 100%;
+                padding: 8px;
+                margin-top: 5px;
+                margin-bottom: 10px;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                font-size: 14px;
+            }
+
+            img {
+                width: 100%;
+                max-width: 800px;
+                border-radius: 10px;
+                box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            }
+
+            #videoBox {
+                margin-bottom: 20px;
+            }
+
+            span {
+                font-size: 14px;
+                color: #555;
+            }
+
+            @media (max-width: 768px) {
+                div {
+                    width: 95%;
+                }
+            }
+        </style>
     </head>
     <body>
         <h1>Project End</h1>
-        <div>
-            <label>
-                <input type="checkbox" id="thresholdToggle" onchange="toggleSource()">
-                Threshold
-            </label>
-        </div>
-
+    
         <div>
             <div>
+                <h2>Threshold</h2>
+                <h3>Lower Range</h3>
                 <div>
-                    <label for="lowerR">Lower R: <span id="lowerRValue">{{ lower_bound_color[0] }}</span></label>
-                    <input type="range" id="lowerR" min="0" max="255" value="{{ lower_bound_color[0] }}" oninput="updateThreshold()">
+                    <label for="lowerH">Lower H: <span id="lowerHValue">{{ lower_bound_color[0] }}</span></label>
+                    <input type="range" id="lowerH" min="0" max="255" value="{{ lower_bound_color[0] }}" oninput="updateThreshold()">
                 </div>
                 <div>
-                    <label for="lowerG">Lower G: <span id="lowerGValue">{{ lower_bound_color[1] }}</span></label>
-                    <input type="range" id="lowerG" min="0" max="255" value="{{ lower_bound_color[1] }}" oninput="updateThreshold()">
+                    <label for="lowerS">Lower S: <span id="lowerSValue">{{ lower_bound_color[1] }}</span></label>
+                    <input type="range" id="lowerS" min="0" max="255" value="{{ lower_bound_color[1] }}" oninput="updateThreshold()">
                 </div>
                 <div>
-                    <label for="lowerB">Lower B: <span id="lowerBValue">{{ lower_bound_color[2] }}</span></label>
-                    <input type="range" id="lowerB" min="0" max="255" value="{{ lower_bound_color[2] }}" oninput="updateThreshold()">
+                    <label for="lowerV">Lower V: <span id="lowerVValue">{{ lower_bound_color[2] }}</span></label>
+                    <input type="range" id="lowerV" min="0" max="255" value="{{ lower_bound_color[2] }}" oninput="updateThreshold()">
                 </div>
             </div>
 
+            <h3>Upper Range</h3>
             <div>
                 <div>
-                    <label for="upperR">Upper R: <span id="upperRValue">{{ upper_bound_color[0] }}</span></label>
-                    <input type="range" id="upperR" min="0" max="255" value="{{ upper_bound_color[0] }}" oninput="updateThreshold()">
+                    <label for="upperH">Upper H: <span id="upperHValue">{{ upper_bound_color[0] }}</span></label>
+                    <input type="range" id="upperH" min="0" max="255" value="{{ upper_bound_color[0] }}" oninput="updateThreshold()">
                 </div>
                 <div>
-                    <label for="upperG">Upper G: <span id="upperGValue">{{ upper_bound_color[1] }}</span></label>
-                    <input type="range" id="upperG" min="0" max="255" value="{{ upper_bound_color[1] }}" oninput="updateThreshold()">
+                    <label for="upperS">Upper S: <span id="upperSValue">{{ upper_bound_color[1] }}</span></label>
+                    <input type="range" id="upperS" min="0" max="255" value="{{ upper_bound_color[1] }}" oninput="updateThreshold()">
                 </div>
                 <div>
-                    <label for="upperB">Upper B: <span id="upperBValue">{{ upper_bound_color[2] }}</span></label>
-                    <input type="range" id="upperB" min="0" max="255" value="{{ upper_bound_color[2] }}" oninput="updateThreshold()">
+                    <label for="upperV">Upper V: <span id="upperVValue">{{ upper_bound_color[2] }}</span></label>
+                    <input type="range" id="upperV" min="0" max="255" value="{{ upper_bound_color[2] }}" oninput="updateThreshold()">
                 </div>
             </div>
-
             <input type="button" value="Reset Threshold" onclick="resetThreshold()">
         </div>
 
         <div>
+            <h2>Configuration</h2>
+            <label>
+                <input type="checkbox" id="thresholdToggle" onchange="toggleSource()"> Threshold
+            </label>
+            <label>
+                <input type="checkbox" id="flipToggle" onchange="toggleSource()"> Flip
+            </label>
+            <label>
+                <input type="checkbox" id="referenceToggle" onchange="toggleSource()"> Reference
+            </label>
+        </div>
+
+        <div>
+            <h2>Video</h2>
             <img id="videoBox" src="{{ url_for('video') }}" alt="Video" />
         </div>
 
         <div>
-            <div>
-                <label for="bScore">B Score: <span id="bScoreValue">{{ b_score }}</span></label>
-                <input type="range" id="bScore" min="-100" max="100" value="{{ b_score }}" oninput="updateScore()">
-            </div>
-            <div>
-                <label for="hScore">H Score: <span id="hScoreValue">{{ h_score }}</span></label>
-                <input type="range" id="hScore" min="-100" max="100" value="{{ h_score }}" oninput="updateScore()">
-            </div>
+            <h2>Measurement</h2>
+            <label for="bScore">B Score: <span id="bScoreValue">{{ b_score }}</span></label>
+            <input type="number" id="bScore" min="-100" max="100" value="{{ b_score }}" oninput="updateScore()" step="0.01">
+
+            <label for="hScore">H Score: <span id="hScoreValue">{{ h_score }}</span></label>
+            <input type="number" id="hScore" min="-100" max="100" value="{{ h_score }}" oninput="updateScore()" step="0.01">
+
             <input type="button" value="Reset Score" onclick="resetScore()">
-            <input type="button" value="Start" onclick="takePicture()">
+        </div>
+
+        <div>
+            <h2>Commands</h2>
+            <label for="txtPath">Generate from folder:</label>
+            <input type="text" id="txtPath">
+
+            <input type="button" value="Scanning" onclick="startScanning()">
+            <input type="button" value="Generate" onclick="startGenerate()">
+            <input type="button" value="Rotating Test" onclick="rotatingTest()">
+            <input type="button" value="Start All" onclick="startAll()">
+
+            <label>Status: <span id="statusRendering">---</span></label>
         </div>
     </body>
 </html>
