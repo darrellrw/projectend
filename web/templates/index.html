@@ -11,25 +11,106 @@
                 video.src = `{{ url_for('video') }}?${urlParams}`;
             }
 
-            function toggleInputs(disable) {
-                const inputs = ['lowerH', 'lowerS', 'lowerV', 'upperH', 'upperS', 'upperV'];
-                inputs.forEach(id => document.getElementById(id).disabled = disable);
-            }
-
-            function refToggleSource() {
-                const thresholdCB = document.getElementById("thresholdToggle");
-                // toggleInputs(thresholdCB.checked);
-                updateVideoSource({ threshold: thresholdCB.checked });
-            }
-
             function toggleSource() {
                 const flipCB = document.getElementById("flipToggle");
                 const referenceCB = document.getElementById("referenceToggle");
                 const thresholdCB = document.getElementById("thresholdToggle");
-                updateVideoSource({ threshold: thresholdCB.checked, flip: flipCB.checked, reference: referenceCB.checked });
+                const cameraCB = document.getElementById("cameraToggle");
+
+                if (thresholdCB.checked) {
+                    document.getElementById("lowerH").disabled = false;
+                    document.getElementById("upperH").disabled = false;
+                    document.getElementById("lowerS").disabled = false;
+                    document.getElementById("upperS").disabled = false;
+                    document.getElementById("lowerV").disabled = false;
+                    document.getElementById("upperV").disabled = false;
+                } else {
+                    document.getElementById("lowerH").disabled = true;
+                    document.getElementById("upperH").disabled = true;
+                    document.getElementById("lowerS").disabled = true;
+                    document.getElementById("upperS").disabled = true;
+                    document.getElementById("lowerV").disabled = true;
+                    document.getElementById("upperV").disabled = true;
+                }
+
+                updateVideoSource({ threshold: thresholdCB.checked, flip: flipCB.checked, reference: referenceCB.checked, camera_status: cameraCB.checked });
+
             }
 
+            function toggleCamera() {
+                const flipCB = document.getElementById("flipToggle");
+                const referenceCB = document.getElementById("referenceToggle");
+                const thresholdCB = document.getElementById("thresholdToggle");
+                const cameraCB = document.getElementById("cameraToggle");
+
+                const resolution = document.getElementById("resolution")
+                const resolutionOp = resolution.value.split('x').map(Number);
+
+                const cropCB = document.getElementById("cropToggle");
+
+                if (cameraCB.checked) {
+                    sendRequest("{{ url_for('enable_camera') }}", { res_width: resolutionOp[0], res_height: resolutionOp[1] }, (response, status) => {
+                        if (status === 200) {
+                            resolution.disabled = true;
+                            cropCB.disabled = false;
+                            resolution.value = response;
+                            console.log(response);
+                        }
+                    });
+                } else {
+                    sendRequest("{{ url_for('disable_camera') }}", {}, (response, status) => {
+                        if (status === 200) {
+                            resolution.disabled = false;
+                            cropCB.disabled = true;
+                            console.log(response);
+                        }
+                    });
+                }
+                updateVideoSource({ threshold: thresholdCB.checked, flip: flipCB.checked, reference: referenceCB.checked, camera_status: cameraCB.checked });
+            }
+
+            function toggleCropSource() {
+                const flipCB = document.getElementById("flipToggle");
+                const referenceCB = document.getElementById("referenceToggle");
+                const thresholdCB = document.getElementById("thresholdToggle");
+                const cameraCB = document.getElementById("cameraToggle");
+                const cropCB = document.getElementById("cropToggle");
+
+                const topCrop = document.getElementById("topCrop")
+                const bottomCrop = document.getElementById("bottomCrop")
+                const rightCrop = document.getElementById("rightCrop")
+
+                if (cropCB.checked) {
+                    topCrop.disabled = false;
+                    bottomCrop.disabled = false;
+                    rightCrop.disabled = false;
+                } else {
+                    topCrop.disabled = true;
+                    bottomCrop.disabled = true;
+                    rightCrop.disabled = true;
+                }
+
+                updateVideoSource({ threshold: thresholdCB.checked, flip: flipCB.checked, reference: referenceCB.checked, camera_status: cameraCB.checked, crop_preview: cropCB.checked });
+            }
+
+            function changeResolution() {
+                const resolution = document.getElementById("resolution").value;
+                resolutionOp = resolution.split('x').map(Number);
+
+                document.getElementById("topCrop").min = resolutionOp[1] / 2;
+                document.getElementById("bottomCrop").max = resolutionOp[1] / 2;
+                document.getElementById("rightCrop").min = resolutionOp[0] / 2;
+
+                sendRequest("{{ url_for('change_resolution') }}", { res_width: resolutionOp[0], res_height: resolutionOp[1] }, (response, status) => {
+                    if (status === 200) {
+                        console.log(response);
+                    }
+                });
+            }
             function updateThreshold() {
+                const thresholdCB = document.getElementById("thresholdToggle");
+                const cameraCB = document.getElementById("cameraToggle");
+
                 const values = ['lowerH', 'upperH', 'lowerS', 'upperS', 'lowerV', 'upperV'].map(id => parseInt(document.getElementById(id).value));
                 [0, 2, 4].forEach(i => {
                     if (values[i] >= values[i + 1]) {
@@ -39,7 +120,10 @@
                 });
                 updateValuesDisplay(values);
                 updateThresholdOnServer(values);
+                updateVideoSource({ threshold: thresholdCB.checked, camera_status: cameraCB.checked });
             }
+
+            
 
             function updateValuesDisplay(values) {
                 const ids = ['lowerH', 'upperH', 'lowerS', 'upperS', 'lowerV', 'upperV'];
@@ -65,6 +149,7 @@
             function updateScore() {
                 const bScore = parseFloat(document.getElementById("bScore").value);
                 const hScore = parseFloat(document.getElementById("hScore").value);
+                const pcm = parseFloat(document.getElementById("pcm").value);
 
                 if (bScore < -100) {
                     document.getElementById("bScore").value = -100;
@@ -86,9 +171,36 @@
                     document.getElementById("hScoreValue").innerText = hScore;
                 }
 
+                if (pcm < 0) {
+                    document.getElementById("pcm").value = 0;
+                    document.getElementById("pcmValue").innerText = 0;
+                } else if (pcm > 100) {
+                    document.getElementById("pcm").value = 100;
+                    document.getElementById("pcmValue").innerText = 100;
+                } else {
+                    document.getElementById("pcmValue").innerText = pcm;
+                }
+
                 document.getElementById('bScoreValue').innerText = bScore;
                 document.getElementById('hScoreValue').innerText = hScore;
-                sendRequest("{{ url_for('change_score') }}", { b_score: bScore, h_score: hScore }, (response, status) => {
+                document.getElementById('pcmValue').innerText = pcm;
+                sendRequest("{{ url_for('change_score') }}", { b_score: bScore, h_score: hScore, pcm: pcm }, (response, status) => {
+                    if (status === 200) {
+                        console.log(response);
+                    }
+                });
+            }
+
+            function updateCropSize() {
+                const topCrop = document.getElementById("topCrop").value;
+                const bottomCrop = document.getElementById("bottomCrop").value;
+                const rightCrop = document.getElementById("rightCrop").value;
+
+                document.getElementById("topCropValue").innerText = topCrop;
+                document.getElementById("bottomCropValue").innerText = bottomCrop;
+                document.getElementById("rightCropValue").innerText = rightCrop;
+
+                sendRequest("{{ url_for('change_crop') }}", { top_crop: topCrop, bottom_crop: bottomCrop, right_crop: rightCrop }, (response, status) => {
                     if (status === 200) {
                         console.log(response);
                     }
@@ -125,7 +237,7 @@
                 });
             }
 
-            function startScanning() {
+            function startScan() {
                 document.getElementById("statusRendering").innerText = "Scanning...";
                 sendRequest("{{ url_for('scanning') }}", {}, (response, status) => {
                     if (status === 200) {
@@ -153,7 +265,17 @@
                         }
                     });
                 }
+            }
 
+            function startScanGenerate() {
+                document.getElementById("statusRendering").innerText = "Starting All...";
+
+                sendRequest("{{ url_for('scanning_generate') }}", {}, (response, status) => {
+                    if (status === 200) {
+                        document.getElementById("statusRendering").innerText = `Scanning and Generating Complete | ${response}`;
+                        console.log(response);
+                    }
+                });
             }
 
             function rotatingTest() {
@@ -179,8 +301,16 @@
                 };
 
                 xmlHttp.send(null);
-
             }
+
+            function takeFile() {
+                sendRequest("{{ url_for('take_file') }}", {}, (response, status) => {
+                    if (status === 200) {
+                        console.log(response);
+                    }
+                });
+            }
+
         </script>
         <style>
             body {
@@ -305,20 +435,20 @@
         <h1>Project End</h1>
     
         <div>
+            <h2>Threshold</h2>
+            <h3>Lower Range</h3>
             <div>
-                <h2>Threshold</h2>
-                <h3>Lower Range</h3>
                 <div>
                     <label for="lowerH">Lower H: <span id="lowerHValue">{{ lower_bound_color[0] }}</span></label>
-                    <input type="range" id="lowerH" min="0" max="255" value="{{ lower_bound_color[0] }}" oninput="updateThreshold()">
+                    <input type="range" id="lowerH" min="0" max="255" value="{{ lower_bound_color[0] }}" oninput="updateThreshold()" disabled>
                 </div>
                 <div>
                     <label for="lowerS">Lower S: <span id="lowerSValue">{{ lower_bound_color[1] }}</span></label>
-                    <input type="range" id="lowerS" min="0" max="255" value="{{ lower_bound_color[1] }}" oninput="updateThreshold()">
+                    <input type="range" id="lowerS" min="0" max="255" value="{{ lower_bound_color[1] }}" oninput="updateThreshold()" disabled>
                 </div>
                 <div>
                     <label for="lowerV">Lower V: <span id="lowerVValue">{{ lower_bound_color[2] }}</span></label>
-                    <input type="range" id="lowerV" min="0" max="255" value="{{ lower_bound_color[2] }}" oninput="updateThreshold()">
+                    <input type="range" id="lowerV" min="0" max="255" value="{{ lower_bound_color[2] }}" oninput="updateThreshold()" disabled>
                 </div>
             </div>
 
@@ -326,15 +456,15 @@
             <div>
                 <div>
                     <label for="upperH">Upper H: <span id="upperHValue">{{ upper_bound_color[0] }}</span></label>
-                    <input type="range" id="upperH" min="0" max="255" value="{{ upper_bound_color[0] }}" oninput="updateThreshold()">
+                    <input type="range" id="upperH" min="0" max="255" value="{{ upper_bound_color[0] }}" oninput="updateThreshold()" disabled>
                 </div>
                 <div>
                     <label for="upperS">Upper S: <span id="upperSValue">{{ upper_bound_color[1] }}</span></label>
-                    <input type="range" id="upperS" min="0" max="255" value="{{ upper_bound_color[1] }}" oninput="updateThreshold()">
+                    <input type="range" id="upperS" min="0" max="255" value="{{ upper_bound_color[1] }}" oninput="updateThreshold()" disabled>
                 </div>
                 <div>
                     <label for="upperV">Upper V: <span id="upperVValue">{{ upper_bound_color[2] }}</span></label>
-                    <input type="range" id="upperV" min="0" max="255" value="{{ upper_bound_color[2] }}" oninput="updateThreshold()">
+                    <input type="range" id="upperV" min="0" max="255" value="{{ upper_bound_color[2] }}" oninput="updateThreshold()" disabled>
                 </div>
             </div>
             <input type="button" value="Reset Threshold" onclick="resetThreshold()">
@@ -351,10 +481,39 @@
             <label>
                 <input type="checkbox" id="referenceToggle" onchange="toggleSource()"> Reference
             </label>
+
+            <label>
+                <input type="checkbox" id="cameraToggle" onchange="toggleCamera()"> Camera
+
+                <span for="resolution">Resolution:</span>
+                <select id="resolution" onchange="changeResolution()">
+                    <option value="640x480">640x480</option>
+                    <option value="1280x720">1280x720</option>
+                </select>
+            </label>
+
+            <label>
+                <input type="checkbox" id="cropToggle" onchange="toggleCropSource()" disabled> Crop Preview
+            </label>
+
+            <div>
+                <div>
+                    <label for="topCrop">Top Crop: <span id="topCropValue">{{ top_crop }}</span></label>
+                    <input type="range" id="topCrop" min="0" max="240" value="{{ top_crop }}" oninput="updateCropSize()" disabled>
+                </div>
+                <div>
+                    <label for="bottomCrop">Bottom Crop: <span id="bottomCropValue">{{ bottom_crop }}</span></label>
+                    <input type="range" id="bottomCrop" min="240" max="480" value="{{ bottom_crop }}" oninput="updateCropSize()" disabled>
+                </div>
+                <div>
+                    <label for="rightCrop">Right Crop: <span id="rightCropValue">{{ right_crop }}</span></label>
+                    <input type="range" id="rightCrop" min="320" max="640" value="{{ right_crop }}" oninput="updateCropSize()" disabled>
+                </div>
+            </div>
         </div>
 
         <div>
-            <h2>Video</h2>
+            <h2>Camera</h2>
             <img id="videoBox" src="{{ url_for('video') }}" alt="Video" />
         </div>
 
@@ -366,6 +525,9 @@
             <label for="hScore">H Score: <span id="hScoreValue">{{ h_score }}</span></label>
             <input type="number" id="hScore" min="-100" max="100" value="{{ h_score }}" oninput="updateScore()" step="0.01">
 
+            <label for="pcm">Pixel/CM: <span id="pcmValue">{{ pcm }}</span></label>
+            <input type="number" id="pcm" min="0" max="100" value="{{ pcm }}" oninput="updateScore()" step="0.0001">
+
             <input type="button" value="Reset Score" onclick="resetScore()">
         </div>
 
@@ -374,10 +536,11 @@
             <label for="txtPath">Generate from folder:</label>
             <input type="text" id="txtPath">
 
-            <input type="button" value="Scanning" onclick="startScanning()">
+            <input type="button" value="Scan" onclick="startScan()">
             <input type="button" value="Generate" onclick="startGenerate()">
             <input type="button" value="Rotating Test" onclick="rotatingTest()">
-            <input type="button" value="Start All" onclick="startAll()">
+            <input type="button" value="Scan and Generate" onclick="startScanGenerate()">
+            <input type="button" value="Take Picture" onclick="takeFile()">
 
             <label>Status: <span id="statusRendering">---</span></label>
         </div>

@@ -1,3 +1,3 @@
 import web.server as server
 
-server.start()
+server.start(debug = False)

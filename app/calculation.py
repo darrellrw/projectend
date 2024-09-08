@@ -1,10 +1,6 @@
 import cv2
 import numpy as np
 
-import header
-
-config = header.get_config()
-
 ## OpenCV Formula
 def color_range_threshold(image, lower_bound_color, upper_bound_color):
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
@@ -45,5 +41,5 @@ def positions_rotate(coordinate_values, angle):
         y = position[1]
         z = position[2]
         new_x, new_z = np.dot(np.array([[np.cos(rad), -np.sin(rad)], [np.sin(rad), np.cos(rad)]]), np.array([x, z]))
-        rotated_positions.append((angle, int(new_x), int(y), int(new_z)))
+        rotated_positions.append([angle, int(new_x), int(y), int(new_z)])
     return rotated_positions

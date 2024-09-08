@@ -1,3 +1,5 @@
+import os
+
 import cv2
 
 import header
@@ -7,19 +9,19 @@ from picamera2 import Picamera2
 import app.calculation as calculation
 
 picam = Picamera2(0)
-picam.configure(picam.create_video_configuration(main = {"format": "XRGB8888", "size": (640, 480)}))
-picam.start()
 
-config = header.get_config()
+def start_camera(size):
+    picam.configure(picam.create_video_configuration(main = {"format": "XRGB8888", "size": size}))
+    picam.start()
 
-def get_color_boundaries(section):
-    lower_bound = [int(i) for i in config.get(section, "LOWER_BOUND_COLOR").split(",")]
-    upper_bound = [int(i) for i in config.get(section, "UPPER_BOUND_COLOR").split(",")]
-    return lower_bound, upper_bound
+def stop_camera():
+    picam.stop()
 
-def generate_frames(threshold_status = False, flip = False, reference = False):
+def generate_frames(threshold_status = False, flip = False, reference = False, crop_preview = False):
+    config = header.get_config()
     while True:
-        lower_bound_color, upper_bound_color = get_color_boundaries("Configure")
+        lower_bound_color = [int(i) for i in config.get("Configure", "LOWER_BOUND_COLOR").split(",")]
+        upper_bound_color = [int(i) for i in config.get("Configure", "UPPER_BOUND_COLOR").split(",")]
 
         frame = picam.capture_array()
 
@@ -35,6 +37,18 @@ def generate_frames(threshold_status = False, flip = False, reference = False):
 
         if threshold_status:
             frame_copy = calculation.color_range_threshold(frame_copy, tuple(lower_bound_color), tuple(upper_bound_color))
+
+        if crop_preview:
+            right_crop = int(config.get("Configure", "RIGHT_CROP"))
+            top_crop = int(config.get("Configure", "TOP_CROP"))
+            bottom_crop = int(config.get("Configure", "BOTTOM_CROP"))
+
+            height, width, _ = frame_copy.shape
+
+            if right_crop <= width and right_crop >= width//2:
+                frame_copy = frame_copy[:, width//2:right_crop]
+            if top_crop >= 0 and top_crop <= height//2 and bottom_crop <= height and bottom_crop >= height//2:
+                frame_copy = frame_copy[top_crop:bottom_crop, :]
 
         ret, buffer = cv2.imencode(".jpg", frame_copy)
 
