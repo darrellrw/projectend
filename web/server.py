@@ -1,80 +1,126 @@
-try:
-    import app.picamera as camera
-except ImportError:
-    import app.unicamera as camera
+import os
+import sys
+import signal
+import configparser
+import shutil
 
-import header
-import app.process as process
-
-import datetime
+from urllib.parse import unquote
+import numpy as np
 
 from flask import Flask, Response, render_template, request
+import csv
+
+import app.camera as camera
+import app.process as process
+import app.argumentation as argumentation
 
 app = Flask(__name__)
 
-# Utility function to fetch configuration values
-def get_color_boundaries(section):
-    config = header.get_config()
-    lower_bound = [int(i) for i in config.get(section, "LOWER_BOUND_COLOR").split(",")]
-    upper_bound = [int(i) for i in config.get(section, "UPPER_BOUND_COLOR").split(",")]
-    return lower_bound, upper_bound
-
-def update_color_boundaries(section, lower_bound, upper_bound):
-    header.set_config(section, "LOWER_BOUND_COLOR", f"{lower_bound[0]},{lower_bound[1]},{lower_bound[2]}")
-    header.set_config(section, "UPPER_BOUND_COLOR", f"{upper_bound[0]},{upper_bound[1]},{upper_bound[2]}")
-
-def reset_config():
-    config = header.get_config()
-    header.set_config("Configure", "LOWER_BOUND_COLOR", config.get("Default", "LOWER_BOUND_COLOR"))
-    header.set_config("Configure", "UPPER_BOUND_COLOR", config.get("Default", "UPPER_BOUND_COLOR"))
-    header.set_config("Configure", "H_SCORE", config.get("Default", "H_SCORE"))
-    header.set_config("Configure", "B_SCORE", config.get("Default", "B_SCORE"))
-    header.set_config("Configure", "TOP_CROP", config.get("Default", "TOP_CROP"))
-    header.set_config("Configure", "BOTTOM_CROP", config.get("Default", "BOTTOM_CROP"))
-    header.set_config("Configure", "RIGHT_CROP", config.get("Default", "RIGHT_CROP"))
-    header.set_config("Configure", "RESOLUTION", config.get("Default", "RESOLUTION"))
-    header.set_config("Configure", "FLIP", config.get("Default", "FLIP"))
-    header.set_config("Configure", "PCM", config.get("Default", "PCM"))
+config = configparser.ConfigParser()
+config.read("config.ini")
 
 @app.route("/")
 def home():
-    reset_config()
-    config = header.get_config()
+    lower_bound_color = [int(i) for i in config.get("Configure", "LOWER_BOUND_COLOR").split(",")]
+    upper_bound_color = [int(i) for i in config.get("Configure", "UPPER_BOUND_COLOR").split(",")]
+    h_score = float(config.get("Configure", "H_SCORE"))
+    b_score = float(config.get("Configure", "B_SCORE"))
+    crop = [int(i) for i in config.get("Configure", "CROP").split(",")]
+    pcm = float(config.get("Configure", "PCM"))
+    delay = float(config.get("Configure", "DELAY"))
 
-    lower_bound_color, upper_bound_color = get_color_boundaries("Default")
-    h_score = int(config.get("Default", "H_SCORE"))
-    b_score = int(config.get("Default", "B_SCORE"))
-    pcm = int(config.get("Default", "PCM"))
-
-    top_crop = int(config.get("Default", "TOP_CROP"))
-    bottom_crop = int(config.get("Default", "BOTTOM_CROP"))
-    right_crop = int(config.get("Default", "RIGHT_CROP"))
-
-    return render_template("index.html", lower_bound_color = lower_bound_color, upper_bound_color = upper_bound_color, h_score = h_score, b_score = b_score, pcm = pcm, top_crop = top_crop, bottom_crop = bottom_crop, right_crop = right_crop)
+    return render_template("index.html", lower_bound_color = lower_bound_color, upper_bound_color = upper_bound_color, h_score = h_score, b_score = b_score, pcm = pcm, crop = crop, delay = delay)
 
 @app.route("/video", methods = ["GET"])
 def video():
-    threshold_status = request.args.get("threshold", "false") == "true"
-    flip = request.args.get("flip", "false") == "true"
+    threshold = request.args.get("threshold", "false") == "true"
     reference = request.args.get("reference", "false") == "true"
-    camera_status = request.args.get("camera_status", "false") == "true"
     crop_preview = request.args.get("crop_preview", "false") == "true"
 
-    if flip:
-        header.set_config("Configure", "FLIP", "True", )
-    else:
-        header.set_config("Configure", "FLIP", "False", )
+    lower_bound_color = [int(i) for i in config.get("Configure", "LOWER_BOUND_COLOR").split(",")]
+    upper_bound_color = [int(i) for i in config.get("Configure", "UPPER_BOUND_COLOR").split(",")]
 
-    if camera_status:
-        camera_data = camera.generate_frames(threshold_status = threshold_status, flip = flip, reference = reference, crop_preview = crop_preview)
+    crop = [int(i) for i in config.get("Configure", "CROP").split(",")]
 
-        return Response(camera_data, mimetype = "multipart/x-mixed-replace; boundary=frame", status = 200)
+    return Response(camera.generate_frames(threshold = threshold, reference = reference, crop_preview = crop_preview, lower_bound_color = lower_bound_color, upper_bound_color = upper_bound_color, crop = crop), mimetype="multipart/x-mixed-replace; boundary=frame", status = 200)
+
+@app.route("/rotating_test", methods = ["GET"])
+def rotating_test():
+    process.rotating_test(channel = 0, angle = 0.1, duration = 5)
+    return Response(str("Rotating Test"), status = 200)
+
+@app.route("/calibrate", methods = ["GET"])
+def calibrate():
+    output_response = process.calibrate(camera)
+    return Response(str(f"File Path: {output_response}"), status = 200)
+
+@app.route("/take_file", methods = ["GET"])
+def take_file():
+    output_response = process.take_picture_file(camera)
+    return Response(str(f"File Path: {output_response}"), status = 200)
+
+@app.route("/scanning", methods = ["GET"])
+def scanning():
+    delay = float(config.get("Configure", "DELAY"))
+    output_response = process.scanning(camera, delay)
+    print(f"Delay: {delay}")
+
+    shutil.copy("config.ini", output_response)
+
+    return Response(str(f"Folder Path: {output_response}"), status = 200)
+
+@app.route("/generate", methods = ["GET"])
+def generate():
+    folder_path = unquote(request.args.get("folder_path", ""))
+
+    if folder_path == "":
+        return Response("Folder Path not found", status = 400)
+
+    config_generate = configparser.ConfigParser()
+    config_generate.read(os.path.join(folder_path, "config.ini"))
+
+    lower_bound_color = [int(i) for i in config_generate.get("Configure", "LOWER_BOUND_COLOR").split(",")]
+    upper_bound_color = [int(i) for i in config_generate.get("Configure", "UPPER_BOUND_COLOR").split(",")]
+    h_score = float(config_generate.get("Configure", "H_SCORE"))
+    b_score = float(config_generate.get("Configure", "B_SCORE"))
+    top_crop = int(config_generate.get("Configure", "CROP").split(",")[0])
+    bottom_crop = int(config_generate.get("Configure", "CROP").split(",")[1])
+    right_crop = int(config_generate.get("Configure", "CROP").split(",")[2])
+
+    print(f"Top Crop: {top_crop} | Bottom Crop: {bottom_crop} | Right Crop: {right_crop} | H Score: {h_score} | B Score: {b_score} | Lower Bound: {lower_bound_color} | Upper Bound: {upper_bound_color} | Folder Path: {folder_path}")
+
+    output_response = process.generate_cloud_point(folder_path, np.array(lower_bound_color), np.array(upper_bound_color), h_score, b_score, top_crop, bottom_crop, right_crop)
     
-    return Response("Camera is not started", status = 500)
+    return Response(str(f"File Path: {output_response}"), status = 200)
+
+@app.route("/generate_debug", methods = ["GET"])
+def generate_debug():
+    folder_path = unquote(request.args.get("folder_path", ""))
+
+    if folder_path == "":
+        return Response("Folder Path not found", status = 400)
+    
+    for foldered_data in [d for d in os.listdir(folder_path) if os.path.isdir(os.path.join(folder_path, d))]:
+        chosen_folder = os.path.join(folder_path, foldered_data)
+        print(f"\n\nDebug Start Generating: {chosen_folder}")
+
+        config_generate = configparser.ConfigParser()
+        config_generate.read(os.path.join(chosen_folder, "config.ini"))
+
+        lower_bound_color = [int(i) for i in config_generate.get("Configure", "LOWER_BOUND_COLOR").split(",")]
+        upper_bound_color = [int(i) for i in config_generate.get("Configure", "UPPER_BOUND_COLOR").split(",")]
+        h_score = float(config_generate.get("Configure", "H_SCORE"))
+        b_score = float(config_generate.get("Configure", "B_SCORE"))
+        top_crop = int(config_generate.get("Configure", "CROP").split(",")[0])
+        bottom_crop = int(config_generate.get("Configure", "CROP").split(",")[1])
+        right_crop = int(config_generate.get("Configure", "CROP").split(",")[2])
+
+        output_response = process.generate_cloud_point(chosen_folder, np.array(lower_bound_color), np.array(upper_bound_color), h_score, b_score, top_crop, bottom_crop, right_crop)
+    
+    return Response(str("Debug Done"), status = 200)
 
 @app.route("/change_threshold", methods = ["GET"])
 def change_threshold():
-    config = header.get_config()
     lower_bound_color = [
         int(request.args.get("lower_h", config.get("Configure", "LOWER_BOUND_COLOR").split(",")[0])),
         int(request.args.get("lower_s", config.get("Configure", "LOWER_BOUND_COLOR").split(",")[1])),
@@ -86,103 +132,135 @@ def change_threshold():
         int(request.args.get("upper_v", config.get("Configure", "UPPER_BOUND_COLOR").split(",")[2]))
     ]
 
-    update_color_boundaries("Configure", lower_bound_color, upper_bound_color)
-    return Response("OK", status = 200)
+    config.set("Configure", "LOWER_BOUND_COLOR", f"{lower_bound_color[0]},{lower_bound_color[1]},{lower_bound_color[2]}")
+    config.set("Configure", "UPPER_BOUND_COLOR", f"{upper_bound_color[0]},{upper_bound_color[1]},{upper_bound_color[2]}")
+
+    with open("config.ini", "w") as configfile:
+        config.write(configfile)
+
+    return Response("Threshold Change", status = 200)
 
 @app.route("/change_crop", methods = ["GET"])
 def change_crop():
-    config = header.get_config()
-    top_crop = int(request.args.get("top_crop", config.get("Configure", "TOP_CROP")))
-    bottom_crop = int(request.args.get("bottom_crop", config.get("Configure", "BOTTOM_CROP")))
-    right_crop = int(request.args.get("right_crop", config.get("Configure", "RIGHT_CROP")))
+    top_crop = int(request.args.get("top_crop", config.get("Configure", "CROP").split(",")[0]))
+    bottom_crop = int(request.args.get("bottom_crop", config.get("Configure", "CROP").split(",")[1]))
+    right_crop = int(request.args.get("right_crop", config.get("Configure", "CROP").split(",")[2]))
 
-    header.set_config("Configure", "TOP_CROP", str(top_crop), )
-    header.set_config("Configure", "BOTTOM_CROP", str(bottom_crop), )
-    header.set_config("Configure", "RIGHT_CROP", str(right_crop), )
+    config.set("Configure", "CROP", f"{top_crop},{bottom_crop},{right_crop}")
 
-    return Response("OK", status = 200)
+    with open("config.ini", "w") as configfile:
+        config.write(configfile)
+
+    return Response("Crop Change", status = 200)
 
 @app.route("/change_score", methods = ["GET"])
 def change_score():
-    config = header.get_config()
-    if request.args.get("b_score") == "NaN":
-        h_score = float(request.args.get("h_score", config.get("Configure", "H_SCORE")))
-        b_score = 0
-        pcm = float(request.args.get("pcm", config.get("Configure", "PCM")))
-    elif request.args.get("h_score") == "NaN":
+    h_score = request.args.get("h_score", config.get("Configure", "H_SCORE"))
+    b_score = request.args.get("b_score", config.get("Configure", "B_SCORE"))
+    pcm = request.args.get("pcm", config.get("Configure", "PCM"))
+    delay = request.args.get("delay", config.get("Configure", "DELAY"))
+
+    if h_score == "NaN":
         h_score = 0
-        b_score = float(request.args.get("b_score", config.get("Configure", "B_SCORE")))
-        pcm = float(request.args.get("pcm", config.get("Configure", "PCM")))
-    elif request.args.get("pcm") == "NaN":
-        h_score = float(request.args.get("h_score", config.get("Configure", "H_SCORE")))
-        b_score = float(request.args.get("b_score", config.get("Configure", "B_SCORE")))
+    else:
+        h_score = float(h_score)
+
+    if b_score == "NaN":
+        b_score = 0
+    else:
+        b_score = float(b_score)
+
+    if pcm == "NaN":
         pcm = 0
     else:
-        h_score = float(request.args.get("h_score", config.get("Configure", "H_SCORE")))
-        b_score = float(request.args.get("b_score", config.get("Configure", "B_SCORE")))
-        pcm = float(request.args.get("pcm", config.get("Configure", "PCM")))
+        pcm = float(pcm)
 
-    header.set_config("Configure", "H_SCORE", str(h_score), )
-    header.set_config("Configure", "B_SCORE", str(b_score), )
-    header.set_config("Configure", "PCM", str(pcm), )
+    if delay == "NaN":
+        delay = 0
+    else:
+        delay = float(delay)
 
-    return Response("OK", status = 200)
+    config.set("Configure", "H_SCORE", str(h_score))
+    config.set("Configure", "B_SCORE", str(b_score))
+    config.set("Configure", "PCM", str(pcm))
+    config.set("Configure", "DELAY", str(delay))
 
-@app.route("/rotating_test", methods = ["GET"])
-def rotating_test():
-    process.rotating_test()
-    return Response("OK", status = 200)
+    with open("config.ini", "w") as configfile:
+        config.write(configfile)
 
-@app.route("/scanning", methods = ["GET"])
-def scanning():
-    config = header.get_config()
-    folder_path = process.start_scanning()
-    header.save_config(folder_path, dict(config["Configure"]))
+    return Response("Score Change", status = 200)
 
-    return Response(str(folder_path), status = 200)
+@app.route("/reset", methods = ["GET"])
+def reset():
+    for key, value in config.items("Default"):
+        config.set("Configure", key, value)
 
-@app.route("/generate", methods = ["GET"])
-def generate():
-    folder_path = request.args.get("folder_path", "")
-    ploty_path, csv_path, mesh_path = process.generate_point_cloud(f"data/{folder_path}")
-    if ploty_path is None or csv_path is None:
-        return Response("No Image Found", status = 500)
-    return Response(str(f"Plotly: {ploty_path} | CSV: {csv_path} | Mesh: {mesh_path}"), status = 200)
+    with open("config.ini", "w") as configfile:
+        config.write(configfile)
 
-@app.route("/scanning_generate", methods = ["GET"])
-def scanning_generate():
-    folder_path = process.start_scanning()
-    ploty_path, csv_path, mesh_path = process.generate_point_cloud(folder_path)
-    return Response(str(f"Folder Path: {folder_path} | Plotly: {ploty_path} | CSV: {csv_path} | Mesh: {mesh_path}"), status = 200)
+    return Response(str("Default Configuration"), status = 200)
 
-@app.route("/enable_camera", methods = ["GET"])
-def enable_camera():
-    config = header.get_config()
-    res_width = int(request.args.get("res_width", config.get("Default", "RESOLUTION").split(",")[0]))
-    res_height = int(request.args.get("res_height", config.get("Default", "RESOLUTION").split(",")[1]))
+@app.route("/data_gen", methods = ["GET"])
+def data_gen():
+    folder_path = unquote(request.args.get("folder_path_cp", ""))
+    x1data = request.args.get("x1data", "")
+    x2data = request.args.get("x2data", "")
 
-    camera.start_camera((res_width, res_height))
-    return Response(f"{res_width}x{res_height}", status = 200)
+    config_generate = configparser.ConfigParser()
+    config_generate.read(os.path.join(folder_path, "config.ini"))
 
-@app.route("/disable_camera", methods = ["GET"])
-def disable_camera():
+    if folder_path == "" or x1data == "" or x2data == "":
+        return Response("Folder Path or Data not found", status = 400)
+    
+    pcm = float(config_generate.get("Configure", "PCM"))
+    
+    augmented_data_x1 = argumentation.compute_x_distance_on_y(folder_path, float(x1data), pcm)
+    augmented_data_x2 = argumentation.compute_x_distance_on_y(folder_path, float(x2data), pcm)
+    augmented_data_y = argumentation.compute_height_range(folder_path, pcm)
+
+    return Response(str(f"Data X1: {augmented_data_x1} | Data X2: {augmented_data_x2} | Data Y: {augmented_data_y}"), status = 200)
+
+@app.route("/data_gen_debug", methods = ["GET"])
+def data_gen_debug():
+    folder_path = unquote(request.args.get("folder_path", ""))
+    x1data = request.args.get("x1data", "")
+    x2data = request.args.get("x2data", "")
+
+    csv_file_path = os.path.join(folder_path, "augmented_data.csv")
+
+    data_final = []
+
+    for foldered_data in [d for d in os.listdir(folder_path) if os.path.isdir(os.path.join(folder_path, d))]:
+        chosen_folder = os.path.join(folder_path, foldered_data)
+        print(f"\n\nDebug Data: {chosen_folder}")
+
+        config_generate = configparser.ConfigParser()
+        config_generate.read(os.path.join(chosen_folder, "config.ini"))
+
+        if chosen_folder == "" or x1data == "" or x2data == "":
+            return Response("Folder Path or Data not found", status = 400)
+        
+        pcm = float(config_generate.get("Configure", "PCM"))
+        
+        augmented_data_x1 = argumentation.compute_x_distance_on_y(chosen_folder, float(x1data), pcm)
+        augmented_data_x2 = argumentation.compute_x_distance_on_y(chosen_folder, float(x2data), pcm)
+        augmented_data_y = argumentation.compute_height_range(chosen_folder, pcm)
+
+        data_final.append([chosen_folder, augmented_data_x1, augmented_data_x2, augmented_data_y])
+
+    with open(csv_file_path, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(["Folder Path", "Data X1", "Data X2", "Data Y"])
+        writer.writerows(data_final)
+
+    return Response(str("Debug Done"), status = 200)
+
+def signal_handler(sig, frame):
+    print("\nStopping camera...")
     camera.stop_camera()
-    return Response("OK", status = 200)
+    sys.exit(0)
 
-@app.route("/change_resolution", methods = ["GET"])
-def change_resolution():
-    config = header.get_config()
-    res_width = int(request.args.get("res_width", config.get("Configure", "RESOLUTION").split(",")[0]))
-    res_height = int(request.args.get("res_height", config.get("Configure", "RESOLUTION").split(",")[1]))
-
-    header.set_config("Configure", "RESOLUTION", f"{res_width},{res_height}", )
-    return Response("OK", status = 200)
-
-@app.route("/take_file", methods = ["GET"])
-def take_file():
-    folder_path = "data/" + datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + ".jpg"
-    camera.take_file(folder_path)
-    return Response(str(folder_path), status = 200)
-
-def start(debug = False):
-    app.run(host = "0.0.0.0", port = 5000, threaded = True, debug = debug)
+def start(debug = False, port = 5000):
+    camera.start_camera((640, 480))
+    signal.signal(signal.SIGINT, signal_handler)
+    app.run(host = "0.0.0.0", port = port, threaded = True, debug = debug)

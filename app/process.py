@@ -1,149 +1,179 @@
-import app.picamera as camera
-from adafruit_servokit import ServoKit
-
-import plotly.express as px
-
-import time
 import os
+import csv
+import time
 import cv2
 
-import header
-
-import app.calculation as calculation
+from adafruit_servokit import ServoKit
+import plotly.express as px
+import open3d as o3d
 import numpy as np
 
-import csv
-
-import open3d as o3d
-
-import shutil
+import app.algorithm as algorithm
+import app.calibration as calibration
 
 kit = ServoKit(channels = 16)
 
 def servo_rotate(channel = 0, angle = 0):
     kit.continuous_servo[channel].throttle = angle
 
-def rotating_test():
-    servo_rotate(channel = 0, angle = 0)
-    servo_rotate(channel = 0, angle = 0.1)
-    time.sleep(5)
-    servo_rotate(channel = 0, angle = 0)
+def servo_stop(channel = 0):
+    kit.continuous_servo[channel].throttle = 0
 
-def mesh_generation(folder_path, point_cloud):
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(point_cloud)
-    pcd.estimate_normals()
-    o3d.io.write_point_cloud(f"{folder_path}/point_cloud.ply", pcd)
-    
-    distances = pcd.compute_nearest_neighbor_distance()
-    avg_distance = np.mean(distances)
-    radius = 3 * avg_distance
+def rotating_test(channel = 0, angle = 0.1, duration = 5):
+    servo_rotate(channel = channel, angle = 0)
+    servo_rotate(channel = channel, angle = angle)
+    time.sleep(duration)
+    servo_rotate(channel = channel, angle = 0)
 
-    mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(pcd, o3d.utility.DoubleVector([radius, radius * 2]))
-    
-    dec_mesh = mesh.simplify_quadric_decimation(100000)
+def take_picture_file(camera, folder_path = "/home/darrell/Documents/tugasakhir/data"):
+    image_name = time.strftime("pic_%Y-%m-%d_%H-%M-%S", time.localtime())
+    output_image = camera.take_picture()
+    output_path = os.path.join(folder_path, image_name + ".jpg")
+    cv2.imwrite(output_path, output_image)
+    return output_path
 
-    dec_mesh.remove_degenerate_triangles()
-    dec_mesh.remove_duplicated_triangles()
-    dec_mesh.remove_duplicated_vertices()
-    dec_mesh.remove_non_manifold_edges()
-    
-    o3d.io.write_triangle_mesh(f"{folder_path}/mesh.ply", dec_mesh)
+def calibrate(camera, data_path = "/home/darrell/Documents/tugasakhir/data"):
+    current_time = time.strftime("cal_%Y-%m-%d_%H-%M-%S", time.localtime())
+    output_image = calibration.process_image(camera.take_picture())
+    output_path = os.path.join(data_path, current_time + ".jpg")
+    cv2.imwrite(output_path, output_image)
+    return output_path
 
-    return f"{folder_path}/mesh.obj"
-
-def start_scanning():
-    if not os.path.exists("/home/darrell/Documents/projectend/data"):
-        os.makedirs("/home/darrell/Documents/projectend/data")
+def scanning(camera, delay = 0.0573, data_path = "/home/darrell/Documents/tugasakhir/data"):
+    print("Scanning process started")
+    if not os.path.exists(data_path):
+        os.makedirs(data_path)
     
     current_time = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
-    folder_path = f"/home/darrell/Documents/projectend/data/{current_time}"
+    folder_path = os.path.join(data_path, current_time)
     os.makedirs(folder_path)
-    os.makedirs(f"{folder_path}/images")
+    os.makedirs(os.path.join(folder_path, "images"))
 
     for i in range(360):
         servo_rotate(channel = 0, angle = 0)
         time.sleep(0.1)
         servo_rotate(channel = 0, angle = 0.05)
-        time.sleep(0.0573)
+        time.sleep(delay)
         servo_rotate(channel = 0, angle = 0)
         time.sleep(0.1)
-        print(f"Angle: {i}")
-        camera.take_file(f"{folder_path}/images/image_{i}.jpg")
+        print(f"\tAngle: {i}")
+
+        camera.take_file(os.path.join(folder_path, "images", f"{i}.jpg"))
     
-    config_path = "/home/darrell/Documents/projectend/config.ini"
-    config_destination = os.path.join(folder_path, "scan_config.ini")
-    shutil.copyfile(config_path, config_destination)
-    
+    print("Scanning process finished\n")
     return folder_path
 
-def generate_point_cloud(folder_path):
+def generate_cloud_point(folder_path, lower_bound_color, upper_bound_color, h_score, b_score, top_crop = 0, bottom_crop = 480, right_crop = 640):
+    print("Generating point cloud")
     image_list = []
     images_path = os.path.join(folder_path, "images")
 
     if not os.path.exists(images_path):
-        return None, None
+        print("Images folder not found")
+        return None
 
-    for filename in os.listdir(images_path):
-        print(filename)
-        if filename.endswith(".jpg"):
-            image_list.append(os.path.join(images_path, filename))
+    print("Scanning image folder")
+    for image in os.listdir(images_path):
+        print(f"\tFound: {image}")
+        if image.endswith(".jpg"):
+            image_list.append(os.path.join(images_path, image))
     
-    if len(image_list) == 0:
-        return None, None
+    print(f"Total images found: {len(image_list)}")
+    
+    if len(image_list) == 0 or len(image_list) != 360:
+        print("Images not found or not complete")
+        return None
+    
+    image_list = sorted(image_list, key = lambda x: int(os.path.splitext(os.path.basename(x))[0]))
 
-    config = header.read_from_config_file(os.path.join(folder_path, "scan_config.ini"))
-
-    image_list = sorted(image_list, key=lambda x: int(os.path.splitext(os.path.basename(x))[0].split('_')[1]))
+    print("Images sorted")
+    print("Processing images")
 
     coordinates = []
 
     for image in image_list:
-        print(f"Processing {image}")
+        print(f"\tProcessing: {image}")
         frame = cv2.imread(image)
-
-        # Flip is needed | Must change the values
-        if config.get("Configure", "FLIP") == "True":
-            frame = cv2.flip(frame, 1)
-            frame = cv2.flip(frame, 0)
-
-        # Crop the image | Must change the values
+        
         height, width, _ = frame.shape
 
-        right_crop = int(config.get("Configure", "RIGHT_CROP"))
-        top_crop = int(config.get("Configure", "TOP_CROP"))
-        bottom_crop = int(config.get("Configure", "BOTTOM_CROP"))
-
         if right_crop <= width and right_crop >= width//2:
-            frame = frame[:, width//2:right_crop]
+                frame = frame[:, width//2:right_crop]
         if top_crop >= 0 and top_crop <= height//2 and bottom_crop <= height and bottom_crop >= height//2:
             frame = frame[top_crop:bottom_crop, :]
 
-        mask = calculation.color_range_threshold(frame, np.array(config.get("Configure", "LOWER_BOUND_COLOR").split(","), dtype = int), np.array(config.get("Configure", "UPPER_BOUND_COLOR").split(","), dtype = int))
-        pixel_position = calculation.centroid_method(mask)
-        coordinate_values = calculation.linear_equation_method(pixel_position, float(config.get("Configure", "H_SCORE")), float(config.get("Configure", "B_SCORE")))
-        coordinates += calculation.positions_rotate(coordinate_values, int(image_list.index(image)))
+        mask = algorithm.color_range_threshold(frame, lower_bound_color, upper_bound_color)
+        centroids = algorithm.centroid_extraction(mask)
+        point_cloud = algorithm.point_cloud_generation(centroids, h_score, b_score)
+        coordinates += algorithm.rotate_position(point_cloud, int(image_list.index(image)))
 
-    # Remove coordinates where x and z are both 0
     coordinates = [coord for coord in coordinates if coord[1] != 0 or coord[3] != 0]
 
-    # Plotly 3D Scatter Plot
+    print("Point cloud generated\n")
+
+    csv_path = os.path.join(folder_path, "point_cloud.csv")
+    with open(csv_path, 'w', newline = '') as csvfile:
+        csvwriter = csv.writer(csvfile)
+        csvwriter.writerow(["X", "Y", "Z"])
+        csvwriter.writerows(coordinates)
+    
+    print(f"Point cloud saved to {csv_path}\n")
+
     ploty_path = os.path.join(folder_path, "data_plotly.html")
     df = px.data.iris()
     fig = px.scatter_3d(df, x = [position[1] for position in coordinates], y = [position[2] for position in coordinates], z = [position[3] for position in coordinates])
     fig.write_html(ploty_path, auto_open = False)
 
-    # Save coordinates to CSV
-    csv_path = os.path.join(folder_path, "data_coordinates.csv")
-    with open(csv_path, mode = 'w', newline = '') as file:
-        writer = csv.writer(file)
-        writer.writerow(["Angle", "X", "Y", "Z"])
-        for coordinate in coordinates:
-            writer.writerow(coordinate)
+    print(f"Point cloud plot saved to {ploty_path}\n")
 
-    # Generate Point Cloud
-    coordinates_array = np.array(coordinates)
-    point_cloud = coordinates_array[:, 1:].astype(int)
-    mesh_path = mesh_generation(folder_path, point_cloud)
+    try:
+        generate_mesh(folder_path, [position[1:] for position in coordinates])
+    except Exception as e:
+        print(f"Error Generating Mesh: {e}")
+        return csv_path
+
+    print(f"Mesh generated\n")
+
+    return csv_path
+
+def generate_mesh(folder_path, point_cloud):
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(point_cloud)
+
+    o3d.io.write_point_cloud(os.path.join(folder_path, "point_cloud.ply"), pcd)
     
-    return ploty_path, csv_path, mesh_path
+    pcd.estimate_normals(search_param = o3d.geometry.KDTreeSearchParamHybrid(radius = 0.1, max_nn = 30))
+
+    radius = 1.5 * np.mean(pcd.compute_nearest_neighbor_distance())
+    mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(pcd, o3d.utility.DoubleVector([radius, radius * 1.5]))
+    mesh.compute_vertex_normals()
+    mesh = mesh.simplify_vertex_clustering(voxel_size = 0.002)
+    mesh = mesh.filter_smooth_taubin(number_of_iterations = 50)
+
+    mesh.remove_degenerate_triangles()
+    mesh.remove_duplicated_triangles()
+    mesh.remove_duplicated_vertices()
+    mesh.remove_non_manifold_edges()
+
+    o3d.io.write_triangle_mesh(os.path.join(folder_path, "mesh.ply"), mesh)
+
+
+# def generate_mesh(folder_path, point_cloud):
+#     pcd = o3d.geometry.PointCloud()
+#     pcd.points = o3d.utility.Vector3dVector(point_cloud)
+#     o3d.io.write_point_cloud(os.path.join(folder_path, "point_cloud.ply"), pcd)
+#     pcd.estimate_normals(search_param = o3d.geometry.KDTreeSearchParamHybrid(radius = 0.05, max_nn = 30))
+#     distances = pcd.compute_nearest_neighbor_distance()
+#     avg_dist = np.mean(distances)
+#     radius = 2.5 * avg_dist
+#     mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(
+#         pcd, o3d.utility.DoubleVector([radius, radius * 2])
+#     )
+#     # mesh = o3d.t.geometry.TriangleMesh.from_legacy(mesh).fill_holes(hole_size = 10000).to_legacy()
+#     mesh = mesh.simplify_vertex_clustering(voxel_size = 0.005)
+#     mesh = mesh.filter_smooth_taubin(number_of_iterations = 20)
+#     mesh.remove_degenerate_triangles()
+#     mesh.remove_duplicated_triangles()
+#     mesh.remove_duplicated_vertices()
+#     mesh.remove_non_manifold_edges()
+#     o3d.io.write_triangle_mesh(os.path.join(folder_path, "mesh.ply"), mesh)
